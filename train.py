@@ -1,0 +1,179 @@
+from __future__ import annotations
+
+"""Train MultiFormer on the local HDF5 MM-Fi pose dataset."""
+
+import argparse
+from pathlib import Path
+
+import torch
+from torch import nn
+from torch.optim import AdamW
+from torch.optim.lr_scheduler import StepLR
+from tqdm import tqdm
+
+from dataloader import DEFAULT_SPLIT_SCHEME, create_data_loaders
+from metrics import heatmaps_to_keypoints, pck_score
+from model import MultiFormer, multistage_pose_loss
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Train MultiFormer")
+    parser.add_argument("--dataset-root", type=str, required=True, help="Path to packed HDF5 dataset")
+    parser.add_argument("--output-dir", type=str, default="runs/multiformer", help="Checkpoint directory")
+    parser.add_argument("--split-scheme", type=str, default=DEFAULT_SPLIT_SCHEME)
+    parser.add_argument("--batch-size", type=int, default=32)
+    parser.add_argument("--epochs", type=int, default=100)
+    parser.add_argument("--learning-rate", type=float, default=1e-3)
+    parser.add_argument("--weight-decay", type=float, default=0.7)
+    parser.add_argument("--lr-step-size", type=int, default=15)
+    parser.add_argument("--lr-gamma", type=float, default=0.1)
+    parser.add_argument("--num-workers", type=int, default=0)
+    parser.add_argument("--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu")
+    parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--pck-threshold", type=float, default=0.05)
+    return parser.parse_args()
+
+
+def move_batch_to_device(
+    batch: dict[str, torch.Tensor | list[str]],
+    device: torch.device,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    csi_amplitude = batch["csi_amplitude"].to(device=device, dtype=torch.float32)
+    keypoints = batch["keypoints"].to(device=device, dtype=torch.float32)
+    target_pcm = batch["pcm"].to(device=device, dtype=torch.float32)
+    target_paf = batch["paf"].to(device=device, dtype=torch.float32)
+    return csi_amplitude, keypoints, target_pcm, target_paf
+
+
+def run_epoch(
+    model: MultiFormer,
+    data_loader,
+    device: torch.device,
+    optimizer: AdamW | None = None,
+    pck_threshold: float = 0.05,
+) -> tuple[float, float]:
+    is_training = optimizer is not None
+    model.train(is_training)
+    total_loss = 0.0
+    total_pck = 0.0
+    total_samples = 0
+
+    context = torch.enable_grad() if is_training else torch.no_grad()
+    with context:
+        for batch in tqdm(data_loader, dynamic_ncols=True, leave=False):
+            csi_amplitude, keypoints, target_pcm, target_paf = move_batch_to_device(batch, device)
+            if is_training:
+                optimizer.zero_grad(set_to_none=True)
+
+            predictions = model(csi_amplitude)
+            loss = multistage_pose_loss(predictions, target_pcm, target_paf)
+            final_pcm, _ = predictions[-1]
+            predicted_keypoints = heatmaps_to_keypoints(final_pcm)
+            batch_pck = pck_score(predicted_keypoints, keypoints, threshold=pck_threshold)
+
+            if is_training:
+                loss.backward()
+                nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+                optimizer.step()
+
+            batch_size = csi_amplitude.shape[0]
+            total_loss += float(loss.detach().cpu()) * batch_size
+            total_pck += float(batch_pck.detach().cpu()) * batch_size
+            total_samples += batch_size
+
+    total_samples = max(total_samples, 1)
+    return total_loss / total_samples, total_pck / total_samples
+
+
+def save_checkpoint(
+    output_dir: Path,
+    epoch: int,
+    model: MultiFormer,
+    optimizer: AdamW,
+    scheduler: StepLR,
+    train_loss: float,
+    train_pck: float,
+    val_loss: float,
+    val_pck: float,
+) -> None:
+    output_dir.mkdir(parents=True, exist_ok=True)
+    checkpoint = {
+        "epoch": epoch,
+        "model": model.state_dict(),
+        "optimizer": optimizer.state_dict(),
+        "scheduler": scheduler.state_dict(),
+        "train_loss": train_loss,
+        "train_pck": train_pck,
+        "val_loss": val_loss,
+        "val_pck": val_pck,
+    }
+    torch.save(checkpoint, output_dir / "last.pt")
+
+
+def main() -> None:
+    args = parse_args()
+    torch.manual_seed(args.seed)
+
+    device = torch.device(args.device)
+    data_loaders = create_data_loaders(
+        dataset_root=args.dataset_root,
+        batch_size=args.batch_size,
+        num_workers=args.num_workers,
+        split_scheme=args.split_scheme,
+        return_pose_targets=True,
+    )
+
+    model = MultiFormer().to(device)
+    optimizer = AdamW(
+        model.parameters(),
+        lr=args.learning_rate,
+        weight_decay=args.weight_decay,
+    )
+    scheduler = StepLR(optimizer, step_size=args.lr_step_size, gamma=args.lr_gamma)
+    output_dir = Path(args.output_dir)
+
+    best_val_loss = float("inf")
+    for epoch in range(1, args.epochs + 1):
+        train_loss, train_pck = run_epoch(
+            model,
+            data_loaders["train"],
+            device,
+            optimizer=optimizer,
+            pck_threshold=args.pck_threshold,
+        )
+        val_loss, val_pck = run_epoch(
+            model,
+            data_loaders["val"],
+            device,
+            pck_threshold=args.pck_threshold,
+        )
+        scheduler.step()
+
+        save_checkpoint(
+            output_dir,
+            epoch,
+            model,
+            optimizer,
+            scheduler,
+            train_loss,
+            train_pck,
+            val_loss,
+            val_pck,
+        )
+        if val_loss < best_val_loss:
+            best_val_loss = val_loss
+            torch.save(model.state_dict(), output_dir / "best_model.pt")
+
+        current_lr = scheduler.get_last_lr()[0]
+        print(
+            f"epoch={epoch:03d} "
+            f"train_loss={train_loss:.6f} "
+            f"train_pck={train_pck:.4f} "
+            f"val_loss={val_loss:.6f} "
+            f"val_pck={val_pck:.4f} "
+            f"lr={current_lr:.6g}"
+        )
+
+
+if __name__ == "__main__":
+    main()
