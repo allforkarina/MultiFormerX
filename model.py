@@ -5,41 +5,40 @@ from __future__ import annotations
 import torch
 from torch import nn
 from torch.nn import functional as F
+from scipy.signal import resample
 
 
 class CSIAmplitudeTokenizer(nn.Module):
     """Convert CSI amplitude frames into MultiFormer frequency and temporal tokens.
 
     The local dataloader returns CSI amplitude as ``(B, 3, 114, 10)``, i.e.
-    antenna, subcarrier, and packet axes. Following the agreed reproduction
-    mapping, this module resamples the CSI grid to ``64 x 3 x 64`` and projects
-    both token streams from 192 raw features into the Transformer hidden space.
+    antenna, subcarrier, and packet axes. This module keeps all 114 subcarriers
+    and uses Fourier resampling to increase the packet axis to 64.
     """
 
     def __init__(
         self,
         target_packets: int = 64,
-        target_subcarriers: int = 64,
+        target_subcarriers: int = 114,
         num_antennas: int = 3,
         token_dim: int = 192,
     ) -> None:
         super().__init__()
-        raw_token_dim = target_packets * num_antennas
-        if raw_token_dim != target_subcarriers * num_antennas:
-            raise ValueError("Frequency and temporal raw token dimensions must match")
+        frequency_raw_token_dim = target_packets * num_antennas
+        temporal_raw_token_dim = target_subcarriers * num_antennas
 
         self.target_packets = target_packets
         self.target_subcarriers = target_subcarriers
         self.num_antennas = num_antennas
         self.token_dim = token_dim
 
-        self.frequency_projection = nn.Linear(raw_token_dim, token_dim)
-        self.temporal_projection = nn.Linear(raw_token_dim, token_dim)
+        self.frequency_projection = nn.Linear(frequency_raw_token_dim, token_dim)
+        self.temporal_projection = nn.Linear(temporal_raw_token_dim, token_dim)
         self.frequency_position = nn.Parameter(torch.zeros(1, target_subcarriers, token_dim))
         self.temporal_position = nn.Parameter(torch.zeros(1, target_packets, token_dim))
 
     def forward(self, csi_amplitude: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
-        """Return frequency and temporal tokens, both shaped ``(B, 64, token_dim)``."""
+        """Return frequency ``(B, 114, D)`` and temporal ``(B, 64, D)`` tokens."""
 
         if csi_amplitude.ndim != 4:
             raise ValueError(f"Expected CSI amplitude with 4 dims, got {csi_amplitude.shape}")
@@ -47,24 +46,26 @@ class CSIAmplitudeTokenizer(nn.Module):
             raise ValueError(
                 f"Expected {self.num_antennas} antenna channels, got {csi_amplitude.shape[1]}"
             )
+        if csi_amplitude.shape[2] != self.target_subcarriers:
+            raise ValueError(
+                f"Expected {self.target_subcarriers} subcarriers, got {csi_amplitude.shape[2]}"
+            )
 
-        # (B, A, S, T) -> (B, A, T, S), then resize only packet/subcarrier axes.
-        resized = F.interpolate(
-            csi_amplitude.permute(0, 1, 3, 2),
-            size=(self.target_packets, self.target_subcarriers),
-            mode="bilinear",
-            align_corners=False,
+        resampled = torch.as_tensor(
+            resample(csi_amplitude.detach().cpu().numpy(), self.target_packets, axis=-1),
+            dtype=csi_amplitude.dtype,
+            device=csi_amplitude.device,
         )
 
         # Frequency tokens fix one subcarrier and concatenate all packets/antennas.
-        frequency_raw = resized.permute(0, 3, 2, 1).reshape(
+        frequency_raw = resampled.permute(0, 2, 3, 1).reshape(
             csi_amplitude.shape[0],
             self.target_subcarriers,
             self.target_packets * self.num_antennas,
         )
 
         # Temporal tokens fix one packet and concatenate all subcarriers/antennas.
-        temporal_raw = resized.permute(0, 2, 3, 1).reshape(
+        temporal_raw = resampled.permute(0, 3, 2, 1).reshape(
             csi_amplitude.shape[0],
             self.target_packets,
             self.target_subcarriers * self.num_antennas,
@@ -190,12 +191,12 @@ class TokenReconstructionLayer(nn.Module):
         self,
         token_dim: int = 192,
         output_channels: int = 64,
-        token_grid_size: int = 8,
+        token_grid_shape: tuple[int, int] = (8, 8),
         feature_size: int = 36,
     ) -> None:
         super().__init__()
         self.token_dim = token_dim
-        self.token_grid_size = token_grid_size
+        self.token_grid_shape = token_grid_shape
         self.feature_size = feature_size
         self.reconstruction = nn.Sequential(
             nn.Conv2d(token_dim, output_channels, kernel_size=3, stride=1, padding=1),
@@ -209,16 +210,17 @@ class TokenReconstructionLayer(nn.Module):
         batch_size, token_count, token_dim = tokens.shape
         if token_dim != self.token_dim:
             raise ValueError(f"Expected token dim {self.token_dim}, got {token_dim}")
-        if token_count != self.token_grid_size * self.token_grid_size:
+        grid_height, grid_width = self.token_grid_shape
+        if token_count != grid_height * grid_width:
             raise ValueError(
-                f"Expected {self.token_grid_size * self.token_grid_size} tokens, got {token_count}"
+                f"Expected {grid_height * grid_width} tokens, got {token_count}"
             )
 
         feature_map = tokens.transpose(1, 2).reshape(
             batch_size,
             token_dim,
-            self.token_grid_size,
-            self.token_grid_size,
+            grid_height,
+            grid_width,
         )
         feature_map = F.interpolate(
             feature_map,
@@ -253,11 +255,13 @@ class MultiFormerFeatureExtractor(nn.Module):
         self.frequency_reconstruction = TokenReconstructionLayer(
             token_dim=token_dim,
             output_channels=branch_channels,
+            token_grid_shape=(114, 1),
             feature_size=feature_size,
         )
         self.temporal_reconstruction = TokenReconstructionLayer(
             token_dim=token_dim,
             output_channels=branch_channels,
+            token_grid_shape=(8, 8),
             feature_size=feature_size,
         )
 
