@@ -28,3 +28,7 @@ This checkout has no Git history, so use concise imperative commit messages such
 ## Security & Configuration Tips
 
 Do not commit raw datasets, HDF5 files, checkpoints, or local paths containing private user information. Keep large artifacts in `data/` or `runs/` and document required paths through command-line arguments rather than hard-coded constants.
+
+## Agent-Specific Workflow Rules
+
+Before making any code change, ask the project owner for explicit confirmation. Do not independently start code edits without approval. After each large code modification, commit the current project changes and push them to GitHub so version history remains manageable. If Git credentials, remotes, or network access are unavailable, report the blocker and provide the exact Git commands for the owner to run.
