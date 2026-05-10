@@ -51,7 +51,7 @@ def run_epoch(
     data_loader,
     device: torch.device,
     optimizer: Adam | None = None,
-    pck_threshold: float = 0.05,
+    pck_threshold: float = 0.20,
 ) -> tuple[float, float]:
     is_training = optimizer is not None
     model.train(is_training)

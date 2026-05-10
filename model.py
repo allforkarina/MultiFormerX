@@ -185,23 +185,24 @@ class MultiFormerTokenEncoder(nn.Module):
 
 
 class TokenReconstructionLayer(nn.Module):
-    """Reconstruct one encoded token stream into a 2D feature map."""
+    """Reconstruct encoded tokens into 2D feature maps."""
 
     def __init__(
         self,
         token_dim: int = 192,
+        token_count: int = 64,
         output_channels: int = 64,
-        token_grid_shape: tuple[int, int] = (8, 8),
         feature_size: int = 36,
     ) -> None:
         super().__init__()
         self.token_dim = token_dim
-        self.token_grid_shape = token_grid_shape
+        self.token_count = token_count
         self.feature_size = feature_size
+        self.feature_projection = nn.Linear(token_dim, feature_size * feature_size)
         self.reconstruction = nn.Sequential(
-            nn.Conv2d(token_dim, output_channels, kernel_size=3, stride=1, padding=1),
-            nn.ReLU(),
+            nn.Conv2d(token_count, output_channels, kernel_size=3, stride=1, padding=1),
             nn.BatchNorm2d(output_channels),
+            nn.ReLU(),
         )
 
     def forward(self, tokens: torch.Tensor) -> torch.Tensor:
@@ -210,23 +211,14 @@ class TokenReconstructionLayer(nn.Module):
         batch_size, token_count, token_dim = tokens.shape
         if token_dim != self.token_dim:
             raise ValueError(f"Expected token dim {self.token_dim}, got {token_dim}")
-        grid_height, grid_width = self.token_grid_shape
-        if token_count != grid_height * grid_width:
-            raise ValueError(
-                f"Expected {grid_height * grid_width} tokens, got {token_count}"
-            )
+        if token_count != self.token_count:
+            raise ValueError(f"Expected {self.token_count} tokens, got {token_count}")
 
-        feature_map = tokens.transpose(1, 2).reshape(
+        feature_map = self.feature_projection(tokens).reshape(
             batch_size,
-            token_dim,
-            grid_height,
-            grid_width,
-        )
-        feature_map = F.interpolate(
-            feature_map,
-            size=(self.feature_size, self.feature_size),
-            mode="bilinear",
-            align_corners=False,
+            token_count,
+            self.feature_size,
+            self.feature_size,
         )
         return self.reconstruction(feature_map)
 
@@ -254,14 +246,14 @@ class MultiFormerFeatureExtractor(nn.Module):
         )
         self.frequency_reconstruction = TokenReconstructionLayer(
             token_dim=token_dim,
+            token_count=114,
             output_channels=branch_channels,
-            token_grid_shape=(114, 1),
             feature_size=feature_size,
         )
         self.temporal_reconstruction = TokenReconstructionLayer(
             token_dim=token_dim,
+            token_count=64,
             output_channels=branch_channels,
-            token_grid_shape=(8, 8),
             feature_size=feature_size,
         )
 
@@ -278,7 +270,7 @@ class HeatmapDecoder(nn.Module):
     def __init__(
         self,
         input_channels: int = 256,
-        pcm_channels: int = 18,
+        pcm_channels: int = 19,
         paf_channels: int = 38,
     ) -> None:
         super().__init__()
@@ -307,7 +299,7 @@ class PoseAttentivePerceptionModule(nn.Module):
     def __init__(
         self,
         feature_channels: int = 256,
-        pose_channels: int = 56,
+        pose_channels: int = 57,
         reduction: int = 16,
     ) -> None:
         super().__init__()
@@ -349,7 +341,7 @@ class MultiStageFeatureFusionNetwork(nn.Module):
         self,
         input_channels: int = 128,
         feature_channels: int = 256,
-        pcm_channels: int = 18,
+        pcm_channels: int = 19,
         paf_channels: int = 38,
         num_stages: int = 3,
     ) -> None:
