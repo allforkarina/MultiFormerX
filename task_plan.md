@@ -11,7 +11,7 @@
 | 3 | complete | 设计最小代码修改方案 |
 | 4 | complete | 获得项目 owner 明确确认后实施代码修改 |
 | 5 | complete | 编译与 smoke shape 验证 |
-| 6 | in_progress | 清理生成文件并提交推送 |
+| 6 | complete | 清理生成文件并提交推送 |
 
 ## 当前决策
 - owner 已确认 COCO17→OpenPose18 映射和 reconstruction 修改。

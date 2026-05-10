@@ -16,3 +16,4 @@
 - 修改 `metrics.py` 和 `train.py`，编译与 PCK smoke 均通过。
 - 收到 owner 确认：清理 `__pycache__`，新增 `.gitignore`，提交时只保留源码和约束/规划文件。
 - 新增 `.gitignore` 并删除已跟踪/未跟踪的 `__pycache__` 生成文件。
+- 已提交并推送到 `origin/main`：`b9c8934 Align pose targets and reconstruction`。
