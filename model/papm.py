@@ -5,17 +5,11 @@ from torch import nn
 
 
 class PAPM(nn.Module):
-    """Pose Attention Perception Module (论文公式 7-8).
-
-    从上一 stage 的 heatmaps (PCM+PAF, 57ch) 计算:
-      - Channel attention: MLP(57 → hidden → 256) + sigmoid
-      - Spatial attention: Conv2d(2 → 1, k=7) + sigmoid
-    对特征图施加加权: Φ_i = Φ_{i-1} ⊙ W_C ⊗ W_S
-    """
+    """Pose Attention Perception Module: channel + spatial attention from heatmaps."""
 
     def __init__(self, feature_channels: int = 256, heat_channels: int = 57, reduction: int = 8) -> None:
         super().__init__()
-        hidden = max(feature_channels // reduction, 8)
+        hidden = max(feature_channels // reduction, 8)  # floor at 8 to keep MLP meaningful
         self.channel_mlp = nn.Sequential(
             nn.Linear(heat_channels, hidden),
             nn.ReLU(inplace=True),

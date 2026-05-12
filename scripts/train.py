@@ -142,16 +142,25 @@ def save_training_curves(output_dir: Path, history: list[dict[str, float]]) -> N
     plt.figure(figsize=(8, 5))
     plt.plot(epochs, [item["train_loss"] for item in history], label="train loss")
     plt.plot(epochs, [item["val_loss"] for item in history], label="val loss")
-    plt.xlabel("epoch"); plt.ylabel("loss")
-    plt.legend(); plt.grid(True, alpha=0.3); plt.tight_layout()
-    plt.savefig(output_dir / "loss_curve.png", dpi=150); plt.close()
+    plt.xlabel("epoch")
+    plt.ylabel("loss")
+    plt.legend()
+    plt.grid(True, alpha=0.3)
+    plt.tight_layout()
+    plt.savefig(output_dir / "loss_curve.png", dpi=150)
+    plt.close()
 
     plt.figure(figsize=(8, 5))
     plt.plot(epochs, [item["train_pck20"] for item in history], label="train PCK@20")
     plt.plot(epochs, [item["val_pck20"] for item in history], label="val PCK@20")
-    plt.xlabel("epoch"); plt.ylabel("PCK@20")
-    plt.ylim(0.0, 1.0); plt.legend(); plt.grid(True, alpha=0.3); plt.tight_layout()
-    plt.savefig(output_dir / "pck20_curve.png", dpi=150); plt.close()
+    plt.xlabel("epoch")
+    plt.ylabel("PCK@20")
+    plt.ylim(0.0, 1.0)
+    plt.legend()
+    plt.grid(True, alpha=0.3)
+    plt.tight_layout()
+    plt.savefig(output_dir / "pck20_curve.png", dpi=150)
+    plt.close()
 
 
 def main() -> None:
@@ -181,10 +190,14 @@ def main() -> None:
         **common_kwargs,
     )
 
-    train_loader = DataLoader(train_ds, batch_size=args.batch_size, shuffle=True,
-                              num_workers=args.num_workers, pin_memory=device.type == "cuda")
-    val_loader = DataLoader(val_ds, batch_size=args.batch_size, shuffle=False,
-                            num_workers=args.num_workers, pin_memory=device.type == "cuda")
+    train_loader = DataLoader(
+        train_ds, batch_size=args.batch_size, shuffle=True,
+        num_workers=args.num_workers, pin_memory=device.type == "cuda",
+    )
+    val_loader = DataLoader(
+        val_ds, batch_size=args.batch_size, shuffle=False,
+        num_workers=args.num_workers, pin_memory=device.type == "cuda",
+    )
 
     model = MultiFormer().to(device)
     optimizer = AdamW(model.parameters(), lr=args.learning_rate, weight_decay=args.weight_decay)

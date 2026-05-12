@@ -5,11 +5,7 @@ from torch import nn
 
 
 class HeatmapDecoder(nn.Module):
-    """Decode 2D features into PCM (19ch) and PAF (38ch) heatmaps (论文模块 C 子组件).
-
-    共享 4 层 3×3 conv trunk (256→128→128→128→128),
-    然后 bottleneck 1×1 conv (128→512) 接 PCM/PAF 1×1 heads.
-    """
+    """Decode features into PCM (19ch) and PAF (38ch) heatmaps."""
 
     def __init__(
         self,

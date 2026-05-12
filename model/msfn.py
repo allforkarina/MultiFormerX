@@ -8,13 +8,7 @@ from .papm import PAPM
 
 
 class MSFN(nn.Module):
-    """Multi-Stage Feature Fusion Network (论文模块 C).
-
-    三阶段迭代精修:
-      Φ₀(128ch) → input_proj(128→256) → Decoder₁ → H₁
-        → PAPM(H₁) → Φ₁ → Decoder₂ → H₂
-        → PAPM(H₂) → Φ₂ → Decoder₃ → H₃ (final)
-    """
+    """Multi-Stage Feature Fusion Network: iterative PCM/PAF refinement with PAPM feedback."""
 
     def __init__(
         self,

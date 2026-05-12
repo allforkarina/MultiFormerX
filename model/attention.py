@@ -5,7 +5,7 @@ from torch import nn
 
 
 class TransformerBlock(nn.Module):
-    """MultiFormer self-attention block: Pre-LN → MHA → residual → Pre-LN → FFN → residual."""
+    """Pre-LN self-attention block with FFN."""
 
     def __init__(self, embed_dim: int = 1296, num_heads: int = 8, dropout: float = 0.1, ffn_ratio: float = 2.0) -> None:
         super().__init__()
@@ -55,11 +55,9 @@ class ReconstructionLayer(nn.Module):
         )
 
     def forward(self, tokens: torch.Tensor) -> torch.Tensor:
-        bsz, token_count, _ = tokens.shape
-        if token_count != self.token_count:
-            raise ValueError(f"Expected {self.token_count} tokens, got {token_count}")
+        bsz = tokens.shape[0]
         x = self.to_heatmap(tokens)
-        x = x.reshape(bsz, token_count, self.heatmap_size, self.heatmap_size)
+        x = x.reshape(bsz, -1, self.heatmap_size, self.heatmap_size)
         return self.conv(x)
 
 

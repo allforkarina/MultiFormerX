@@ -10,11 +10,7 @@ from .msfn import MSFN
 
 
 class MultiFormer(nn.Module):
-    """MultiFormer: CSI → TFDDT → DualAttention → MSFN → PCM/PAF.
-
-    输入: (B, 64, 3, 114) memmap CSI (time × ant × subc).
-    输出: list of (pcm(B,19,36,36), paf(B,38,36,36)) × 3 stages.
-    """
+    """MultiFormer: CSI → TFDDT → DualAttention → MSFN → PCM/PAF heatmaps."""
 
     def __init__(
         self,
