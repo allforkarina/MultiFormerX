@@ -6,23 +6,7 @@ import torch
 
 
 OPENPOSE18_TO_COCO17: tuple[int, ...] = (
-    0,   # nose
-    15,  # l_eye
-    14,  # r_eye
-    17,  # l_ear
-    16,  # r_ear
-    5,   # l_shoulder
-    2,   # r_shoulder
-    6,   # l_elbow
-    3,   # r_elbow
-    7,   # l_wrist
-    4,   # r_wrist
-    11,  # l_hip
-    8,   # r_hip
-    12,  # l_knee
-    9,   # r_knee
-    13,  # l_ankle
-    10,  # r_ankle
+    0, 15, 14, 17, 16, 5, 2, 6, 3, 7, 4, 11, 8, 12, 9, 13, 10,
 )
 
 
@@ -41,15 +25,6 @@ def heatmaps_to_keypoints(
     Returns:
         (B, 17, 2) keypoints in pose_range coordinates.
     """
-    if heatmaps.ndim != 4:
-        raise ValueError(f"Expected heatmaps with 4 dims, got {heatmaps.shape}")
-    max_keypoint_index = max(keypoint_indices)
-    if heatmaps.shape[1] <= max_keypoint_index:
-        raise ValueError(
-            f"Expected heatmaps with at least {max_keypoint_index + 1} channels, "
-            f"got {heatmaps.shape[1]}"
-        )
-
     keypoint_heatmaps = heatmaps[:, keypoint_indices]
     batch_size, _, height, width = keypoint_heatmaps.shape
     flat_indices = keypoint_heatmaps.flatten(start_dim=2).argmax(dim=2)
@@ -85,16 +60,8 @@ def pck_score(
             "Predicted and target keypoints must have the same shape, "
             f"got {predicted_keypoints.shape} and {target_keypoints.shape}"
         )
-    if predicted_keypoints.ndim != 3 or predicted_keypoints.shape[-1] != 2:
-        raise ValueError(f"Expected keypoints shaped (B, K, 2), got {predicted_keypoints.shape}")
 
     num_keypoints = target_keypoints.shape[1]
-    if right_shoulder_index >= num_keypoints or left_hip_index >= num_keypoints:
-        raise ValueError(
-            f"Torso keypoint indices out of bounds, "
-            f"got rs={right_shoulder_index}, lh={left_hip_index}, num={num_keypoints}"
-        )
-
     valid = torch.isfinite(target_keypoints).all(dim=2)
     torso_points = target_keypoints[:, (right_shoulder_index, left_hip_index)]
     torso_valid = torch.isfinite(torso_points).all(dim=(1, 2))

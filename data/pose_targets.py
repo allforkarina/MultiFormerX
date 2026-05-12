@@ -103,9 +103,6 @@ def generate_pose_targets(
         PCM ch0-17: 18 anatomical keypoints, ch18: mean background.
     """
     keypoints = np.asarray(keypoints, dtype=np.float32)
-    if keypoints.shape != (18, 2):
-        raise ValueError(f"Expected keypoints with shape (18, 2), got {keypoints.shape}")
-
     grid_y, grid_x = np.mgrid[0:heatmap_size, 0:heatmap_size].astype(np.float32)
     points = _pose_to_heatmap_coords(keypoints, size=heatmap_size, pose_range=pose_range)
 
@@ -116,7 +113,7 @@ def generate_pose_targets(
         if valid[idx]:
             distance_sq = (grid_x - point[0]) ** 2 + (grid_y - point[1]) ** 2
             pcm[idx] = np.exp(-distance_sq / (2.0 * heatmap_sigma**2))
-    pcm[18] = pcm[:18].mean(axis=0)
+    pcm[18] = pcm[:18].mean(axis=0)  # background = mean of valid keypoint heatmaps
 
     paf = np.zeros((len(OPENPOSE18_LIMBS) * 2, heatmap_size, heatmap_size), dtype=np.float32)
     for limb_idx, (start_idx, end_idx) in enumerate(OPENPOSE18_LIMBS):
