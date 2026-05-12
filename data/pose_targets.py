@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-"""COCO-17 keypoints to OpenPose-style PCM/PAF target generation."""
+"""OpenPose-style PCM/PAF target generation from OpenPose18 keypoints."""
 
 import numpy as np
 
@@ -62,66 +62,81 @@ def coco17_to_openpose18(keypoints: np.ndarray) -> np.ndarray:
     return openpose_keypoints
 
 
+def _valid_point(point: np.ndarray) -> bool:
+    point = np.asarray(point)
+    return bool(np.isfinite(point).all() and not np.allclose(point, 0.0))
+
+
+def _pose_to_heatmap_coords(
+    kpts: np.ndarray,
+    size: int = 36,
+    pose_range: tuple[float, float] = (-0.8, 0.8),
+) -> np.ndarray:
+    kpts = np.asarray(kpts, dtype=np.float32).copy()
+    lo, hi = pose_range
+    scale = (size - 1) / (hi - lo)
+    invalid = ~np.isfinite(kpts).all(axis=-1) | np.all(np.isclose(kpts, 0.0), axis=-1)
+    kpts = (kpts - lo) * scale
+    kpts = np.clip(kpts, 0, size - 1)
+    kpts[invalid] = 0.0
+    return kpts.astype(np.float32)
+
+
 def generate_pose_targets(
     keypoints: np.ndarray,
     heatmap_size: int = 36,
     heatmap_sigma: float = 1.5,
     paf_width: float = 1.0,
+    pose_range: tuple[float, float] = (-0.8, 0.8),
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Generate OpenPose-style PCM and PAF targets from normalized COCO-17 keypoints.
+    """Generate PCM and PAF targets from OpenPose18 keypoints.
 
     Args:
-        keypoints: Array with shape ``(17, 2)``. Coordinates are expected to be
-            normalized to ``[0, 1]`` in the same convention used by the dataset.
-        heatmap_size: Output spatial size for both PCM and PAF targets.
-        heatmap_sigma: Gaussian standard deviation in heatmap pixels.
-        paf_width: Limb half-width in heatmap pixels.
+        keypoints: (18, 2) OpenPose BODY_18 in pose_range coordinates.
+        heatmap_size: spatial size (36).
+        heatmap_sigma: Gaussian sigma.
+        paf_width: limb half-width.
+        pose_range: (min, max) of keypoint coordinate range.
 
     Returns:
-        ``pcm`` with shape ``(19, H, W)`` and ``paf`` with shape ``(38, H, W)``.
-        PCM channels are 18 OpenPose BODY_18 keypoints plus background.
+        pcm (19, H, W), paf (38, H, W).
+        PCM ch0-17: 18 anatomical keypoints, ch18: mean background.
     """
+    keypoints = np.asarray(keypoints, dtype=np.float32)
+    if keypoints.shape != (18, 2):
+        raise ValueError(f"Expected keypoints with shape (18, 2), got {keypoints.shape}")
 
     grid_y, grid_x = np.mgrid[0:heatmap_size, 0:heatmap_size].astype(np.float32)
-    points = coco17_to_openpose18(keypoints)
-    points[:, 0] *= heatmap_size - 1
-    points[:, 1] *= heatmap_size - 1
+    points = _pose_to_heatmap_coords(keypoints, size=heatmap_size, pose_range=pose_range)
 
-    valid_points = (
-        np.isfinite(points).all(axis=1)
-        & (points[:, 0] >= 0.0)
-        & (points[:, 0] <= heatmap_size - 1)
-        & (points[:, 1] >= 0.0)
-        & (points[:, 1] <= heatmap_size - 1)
-    )
+    valid = np.array([_valid_point(k) for k in keypoints], dtype=bool)
 
     pcm = np.zeros((19, heatmap_size, heatmap_size), dtype=np.float32)
-    for keypoint_index, point in enumerate(points):
-        if not valid_points[keypoint_index]:
-            continue
-        distance_sq = (grid_x - point[0]) ** 2 + (grid_y - point[1]) ** 2
-        pcm[keypoint_index] = np.exp(-distance_sq / (2.0 * heatmap_sigma**2))
-    pcm[-1] = np.clip(1.0 - np.max(pcm[:-1], axis=0), 0.0, 1.0)
+    for idx, point in enumerate(points):
+        if valid[idx]:
+            distance_sq = (grid_x - point[0]) ** 2 + (grid_y - point[1]) ** 2
+            pcm[idx] = np.exp(-distance_sq / (2.0 * heatmap_sigma**2))
+    pcm[18] = pcm[:18].mean(axis=0)
 
     paf = np.zeros((len(OPENPOSE18_LIMBS) * 2, heatmap_size, heatmap_size), dtype=np.float32)
-    for limb_index, (start_index, end_index) in enumerate(OPENPOSE18_LIMBS):
-        if not (valid_points[start_index] and valid_points[end_index]):
+    for limb_idx, (start_idx, end_idx) in enumerate(OPENPOSE18_LIMBS):
+        if not (valid[start_idx] and valid[end_idx]):
             continue
-        start = points[start_index]
-        end = points[end_index]
-        limb_vector = end - start
-        limb_length = float(np.linalg.norm(limb_vector))
-        if limb_length < 1e-6:
+        start = points[start_idx]
+        end = points[end_idx]
+        limb_vec = end - start
+        limb_len = float(np.linalg.norm(limb_vec))
+        if limb_len < 1e-6:
             continue
 
-        unit_vector = limb_vector / limb_length
+        unit_vec = limb_vec / limb_len
         rel_x = grid_x - start[0]
         rel_y = grid_y - start[1]
-        projection = rel_x * unit_vector[0] + rel_y * unit_vector[1]
-        perpendicular = np.abs(rel_x * unit_vector[1] - rel_y * unit_vector[0])
-        mask = (projection >= 0.0) & (projection <= limb_length) & (perpendicular <= paf_width)
+        proj = rel_x * unit_vec[0] + rel_y * unit_vec[1]
+        perp = np.abs(rel_x * unit_vec[1] - rel_y * unit_vec[0])
+        mask = (proj >= 0.0) & (proj <= limb_len) & (perp <= paf_width)
 
-        paf[2 * limb_index][mask] = unit_vector[0]
-        paf[2 * limb_index + 1][mask] = unit_vector[1]
+        paf[2 * limb_idx][mask] = unit_vec[0]
+        paf[2 * limb_idx + 1][mask] = unit_vec[1]
 
     return pcm, paf

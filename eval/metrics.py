@@ -6,50 +6,48 @@ import torch
 
 
 OPENPOSE18_TO_COCO17: tuple[int, ...] = (
-    0,
-    15,
-    14,
-    17,
-    16,
-    5,
-    2,
-    6,
-    3,
-    7,
-    4,
-    11,
-    8,
-    12,
-    9,
-    13,
-    10,
+    0,   # nose
+    15,  # l_eye
+    14,  # r_eye
+    17,  # l_ear
+    16,  # r_ear
+    5,   # l_shoulder
+    2,   # r_shoulder
+    6,   # l_elbow
+    3,   # r_elbow
+    7,   # l_wrist
+    4,   # r_wrist
+    11,  # l_hip
+    8,   # r_hip
+    12,  # l_knee
+    9,   # r_knee
+    13,  # l_ankle
+    10,  # r_ankle
 )
 
 
 def heatmaps_to_keypoints(
     heatmaps: torch.Tensor,
     keypoint_indices: tuple[int, ...] = OPENPOSE18_TO_COCO17,
+    pose_range: tuple[float, float] = (-0.8, 0.8),
 ) -> torch.Tensor:
-    """Decode normalized COCO-17 keypoint coordinates from OpenPose PCM heatmaps.
+    """Decode keypoint coordinates from PCM heatmaps.
 
     Args:
-        heatmaps: Tensor with shape ``(B, C, H, W)``. Only the first
-            ``keypoint_indices`` channels are decoded; background is ignored.
-        keypoint_indices: OpenPose PCM channel indices in target output order.
+        heatmaps: (B, C, H, W). PCM channels in OpenPose18 order (ch18=bg ignored).
+        keypoint_indices: OpenPose PCM channel indices → COCO17 output order.
+        pose_range: (min, max) of keypoint coordinate system.
 
     Returns:
-        Tensor with shape ``(B, K, 2)`` containing normalized
-        ``x, y`` coordinates in ``[0, 1]``.
+        (B, 17, 2) keypoints in pose_range coordinates.
     """
-
     if heatmaps.ndim != 4:
         raise ValueError(f"Expected heatmaps with 4 dims, got {heatmaps.shape}")
-    if not keypoint_indices:
-        raise ValueError("Expected at least one keypoint index")
     max_keypoint_index = max(keypoint_indices)
     if heatmaps.shape[1] <= max_keypoint_index:
         raise ValueError(
-            f"Expected heatmaps with channel index {max_keypoint_index}, got {heatmaps.shape[1]} channels"
+            f"Expected heatmaps with at least {max_keypoint_index + 1} channels, "
+            f"got {heatmaps.shape[1]}"
         )
 
     keypoint_heatmaps = heatmaps[:, keypoint_indices]
@@ -60,6 +58,12 @@ def heatmaps_to_keypoints(
     x = (flat_indices % width).to(dtype=heatmaps.dtype)
     x = x / max(width - 1, 1)
     y = y / max(height - 1, 1)
+
+    lo, hi = pose_range
+    span = hi - lo
+    x = x * span + lo
+    y = y * span + lo
+
     return torch.stack((x, y), dim=2).reshape(batch_size, len(keypoint_indices), 2)
 
 
@@ -71,8 +75,11 @@ def pck_score(
     left_hip_index: int = 11,
     eps: float = 1e-6,
 ) -> torch.Tensor:
-    """Compute torso-normalized single-person PCK on normalized coordinates."""
+    """Compute torso-normalized single-person PCK.
 
+    Both predicted and target keypoints must be in the same coordinate system.
+    Valid keypoints are those with finite, non-zero values.
+    """
     if predicted_keypoints.shape != target_keypoints.shape:
         raise ValueError(
             "Predicted and target keypoints must have the same shape, "
@@ -80,12 +87,12 @@ def pck_score(
         )
     if predicted_keypoints.ndim != 3 or predicted_keypoints.shape[-1] != 2:
         raise ValueError(f"Expected keypoints shaped (B, K, 2), got {predicted_keypoints.shape}")
+
     num_keypoints = target_keypoints.shape[1]
     if right_shoulder_index >= num_keypoints or left_hip_index >= num_keypoints:
         raise ValueError(
-            "Torso keypoint indices must be within keypoint dimension, "
-            f"got right_shoulder_index={right_shoulder_index}, left_hip_index={left_hip_index}, "
-            f"num_keypoints={num_keypoints}"
+            f"Torso keypoint indices out of bounds, "
+            f"got rs={right_shoulder_index}, lh={left_hip_index}, num={num_keypoints}"
         )
 
     valid = torch.isfinite(target_keypoints).all(dim=2)
