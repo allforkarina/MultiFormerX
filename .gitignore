@@ -15,7 +15,6 @@ env/
 .ruff_cache/
 
 # Datasets and generated artifacts
-data/
 runs/
 checkpoints/
 *.h5

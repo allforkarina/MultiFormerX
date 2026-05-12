@@ -13,7 +13,7 @@ import numpy as np
 from scipy.io import loadmat
 from tqdm import tqdm
 
-from pose_targets import generate_pose_targets
+from data.pose_targets import generate_pose_targets
 
 try:
     from torch.utils.data import DataLoader

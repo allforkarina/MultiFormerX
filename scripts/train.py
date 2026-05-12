@@ -12,9 +12,9 @@ from torch.optim import Adam
 from torch.optim.lr_scheduler import StepLR
 from tqdm import tqdm
 
-from dataloader import DEFAULT_SPLIT_SCHEME, create_data_loaders
-from metrics import heatmaps_to_keypoints, pck_score
-from model import MultiFormer, multistage_pose_loss
+from data.dataloader import DEFAULT_SPLIT_SCHEME, create_data_loaders
+from eval.metrics import heatmaps_to_keypoints, pck_score
+from model.model import MultiFormer, multistage_pose_loss
 
 
 def parse_args() -> argparse.Namespace:
