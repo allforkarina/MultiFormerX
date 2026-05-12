@@ -35,3 +35,4 @@ checkpoints/
 .vscode/
 .DS_Store
 Thumbs.db
+.claude/.auto_push_ts
