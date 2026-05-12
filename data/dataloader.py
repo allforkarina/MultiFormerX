@@ -349,23 +349,20 @@ def _validate_keypoints(keypoints: np.ndarray, source: Path) -> np.ndarray:
 def _clean_csi_amplitude(csi_amplitude: np.ndarray, source: Path) -> np.ndarray:
     """Replace non-finite amplitude values with finite frame-local bounds."""
 
-    finite_mask = np.isfinite(csi_amplitude)        # find the finite value in csi amplitude, and get its indice mask
+    finite_mask = np.isfinite(csi_amplitude)
     if finite_mask.all():
-        return csi_amplitude                        # if all the value is finite, return directly (no infinite or nan values)
+        return csi_amplitude
 
-    finite_values = csi_amplitude[finite_mask]      # get the valid value based on the mask
+    finite_values = csi_amplitude[finite_mask]
     if finite_values.size == 0:
         raise ValueError(f"CSI amplitude contains no finite values: {source}")
 
-    finite_min = np.min(finite_values)              # minimum of the finite value
-    finite_max = np.max(finite_values)              # maximum of the finite value
+    finite_min = np.min(finite_values)
+    finite_max = np.max(finite_values)
     cleaned = csi_amplitude.copy()
-    cleaned[np.isnan(cleaned)] = finite_min         # nan -> minimum
-    cleaned[np.isneginf(cleaned)] = finite_min      # -inf -> minimum
-    cleaned[np.isposinf(cleaned)] = finite_max      # +inf -> maximum
-
-    if not np.isfinite(cleaned).all():
-        raise ValueError(f"CSI amplitude still contains non-finite values after cleaning: {source}")
+    cleaned[np.isnan(cleaned)] = finite_min
+    cleaned[np.isneginf(cleaned)] = finite_min
+    cleaned[np.isposinf(cleaned)] = finite_max
 
     return cleaned
 
@@ -376,37 +373,33 @@ def _clean_csi_phase(csi_phase: np.ndarray, source: Path) -> np.ndarray:
     cleaned = np.asarray(csi_phase, dtype=np.float32).copy()
     subcarrier_indices = np.arange(CSI_SHAPE[1], dtype=np.float32)
 
-    for antenna_index in range(CSI_SHAPE[0]):                       # each antenna
-        for time_index in range(CSI_SHAPE[2]):                      # each time point
-            phase_line = cleaned[antenna_index, :, time_index]      # all subcarriers
-            finite_mask = np.isfinite(phase_line)                   # find the finite value indice.
-            
+    for antenna_index in range(CSI_SHAPE[0]):
+        for time_index in range(CSI_SHAPE[2]):
+            phase_line = cleaned[antenna_index, :, time_index]
+            finite_mask = np.isfinite(phase_line)
+
             if not finite_mask.any():
                 raise ValueError(f"CSI phase contains no finite values: {source}")
             if not finite_mask.all():
-                phase_line = np.interp(                             # interpolate the phase for infinite subcarrier value
+                phase_line = np.interp(
                     subcarrier_indices,
                     subcarrier_indices[finite_mask],
                     phase_line[finite_mask],
                 ).astype(np.float32)
-                cleaned[antenna_index, :, time_index] = phase_line  # append to cleaned phase
+                cleaned[antenna_index, :, time_index] = phase_line
 
-    unwrapped = np.unwrap(cleaned, axis=1).astype(np.float32)       # unwrap the phase to prevent huge jump
+    unwrapped = np.unwrap(cleaned, axis=1).astype(np.float32)
 
-    centered_subcarriers = (                                        # x - x_mean
-        subcarrier_indices - float(np.mean(subcarrier_indices))     # -56.5, ..., -0.5, 0.5, ..., 56.5
-    ).reshape(1, CSI_SHAPE[1], 1)                                   # [1, 114, 1]
+    centered_subcarriers = (
+        subcarrier_indices - float(np.mean(subcarrier_indices))
+    ).reshape(1, CSI_SHAPE[1], 1)
 
-    phase_mean = np.mean(unwrapped, axis=1, keepdims=True)          # calculate the mean of each antenna and time slot, 3 x 1 x 10
-    
-    
-    slope = np.sum(centered_subcarriers * (unwrapped - phase_mean), axis=1, keepdims=True)  # sum( (x - x_mean) * (y - y_mean) )
-    slope = slope / np.sum(centered_subcarriers * centered_subcarriers)                     # slope / sum( (x - x_mean)^2 )
-    linear_trend = slope * centered_subcarriers + phase_mean                                # linear = slope * (x - x_mean) + y_mean
+    phase_mean = np.mean(unwrapped, axis=1, keepdims=True)
+
+    slope = np.sum(centered_subcarriers * (unwrapped - phase_mean), axis=1, keepdims=True)
+    slope = slope / np.sum(centered_subcarriers * centered_subcarriers)
+    linear_trend = slope * centered_subcarriers + phase_mean
     calibrated = (unwrapped - linear_trend).astype(np.float32)
-
-    if not np.isfinite(calibrated).all():
-        raise ValueError(f"CSI phase still contains non-finite values after cleaning: {source}")
 
     return calibrated
 
@@ -440,17 +433,14 @@ def _prepare_raw_frame(record: FrameRecord) -> tuple[np.ndarray, np.ndarray, np.
 def _compute_train_amplitude_bounds(records: Sequence[FrameRecord]) -> tuple[float, float]:
     """Compute global min/max on cleaned train-split amplitudes only."""
 
-    global_min = float("inf")       # global minimum
-    global_max = float("-inf")      # global maximum
+    global_min = float("inf")
+    global_max = float("-inf")
 
-    # find by frame
     for record in tqdm(records, desc="Computing train amplitude bounds", dynamic_ncols=True):
         _, csi_amplitude = _prepare_keypoints_and_amplitude(record)
         global_min = min(global_min, float(np.min(csi_amplitude)))
         global_max = max(global_max, float(np.max(csi_amplitude)))
 
-    if not np.isfinite(global_min) or not np.isfinite(global_max):
-        raise ValueError("Train amplitude bounds must be finite after cleaning")
     if global_max <= global_min:
         raise ValueError(
             f"Train amplitude bounds are invalid for min-max normalization: min={global_min}, max={global_max}"
@@ -471,7 +461,7 @@ def _normalize_csi_amplitude(
 
 
 def _compute_train_keypoint_scales(records: Sequence[FrameRecord]) -> tuple[float, float]:
-    """Compute per-axis global maxima on the train split for stable keypoint scaling."""
+    """Compute per-axis global maxima on the train split for keypoint scaling."""
 
     global_x_max = float("-inf")
     global_y_max = float("-inf")
@@ -481,8 +471,6 @@ def _compute_train_keypoint_scales(records: Sequence[FrameRecord]) -> tuple[floa
         global_x_max = max(global_x_max, float(np.max(keypoints[:, 0])))
         global_y_max = max(global_y_max, float(np.max(keypoints[:, 1])))
 
-    if not np.isfinite(global_x_max) or not np.isfinite(global_y_max):
-        raise ValueError("Train keypoint scales must be finite")
     if global_x_max <= 0.0 or global_y_max <= 0.0:
         raise ValueError(
             f"Train keypoint scales must be positive, got x={global_x_max}, y={global_y_max}"
@@ -815,28 +803,20 @@ class MMFiPoseDataset:
         return sample
 
 
-# Put MMFiPoseDataset into DataLoader, batch and shuffle.
 def create_data_loader(
     dataset_root: str | Path,
     split: str,
     batch_size: int,
-    seed: int = 42,
     num_workers: int = 0,
     shuffle: Optional[bool] = None,
     split_scheme: str = DEFAULT_SPLIT_SCHEME,
-    split_ratios: Optional[Dict[str, int]] = None,
     sequence_length: int = 1,
     return_pose_targets: bool = False,
 ):
     """Create one PyTorch DataLoader for the requested HDF5 split."""
 
     if DataLoader is None:
-        raise ImportError(
-            "PyTorch is not installed in the current environment. "
-            "Install torch to create DataLoader instances."
-        )
-
-    del seed, split_ratios  # pre-allocated while build .h5 file
+        raise ImportError("PyTorch is not installed. Install torch to create DataLoader instances.")
 
     dataset = MMFiPoseDataset(
         dataset_root=dataset_root,
@@ -857,10 +837,8 @@ def create_data_loader(
 def create_data_loaders(
     dataset_root: str | Path,
     batch_size: int,
-    seed: int = 42,
     num_workers: int = 0,
     split_scheme: str = DEFAULT_SPLIT_SCHEME,
-    split_ratios: Optional[Dict[str, int]] = None,
     sequence_length: int = 1,
     return_pose_targets: bool = False,
 ):
@@ -871,10 +849,8 @@ def create_data_loaders(
             dataset_root=dataset_root,
             split=split,
             batch_size=batch_size,
-            seed=seed,
             num_workers=num_workers,
             split_scheme=split_scheme,
-            split_ratios=split_ratios,
             sequence_length=sequence_length,
             return_pose_targets=return_pose_targets,
         )
