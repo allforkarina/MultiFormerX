@@ -17,6 +17,9 @@ env/
 # Datasets and generated artifacts
 runs/
 checkpoints/
+ground_truth_npy/
+ground_truth.npy
+merge_ground_truth.py
 *.h5
 *.hdf5
 *.pt
