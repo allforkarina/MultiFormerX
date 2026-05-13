@@ -59,7 +59,7 @@ class MemmapDataset(Dataset):
         data_dir = Path(data_dir)
 
         self._csi = np.load(str(data_dir / CSI_FILES[normalize]), mmap_mode="r")
-        self._kpts18 = np.load(str(data_dir / "kpts18.npy"))
+        self._kpts18 = np.load(str(data_dir / "ground_truth.npy"))
         meta = np.load(str(data_dir / "meta.npz"), allow_pickle=True)
         self._envs = meta["environment"]
         self._samples = meta["sample"]
