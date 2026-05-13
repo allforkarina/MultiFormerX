@@ -68,7 +68,7 @@ python train.py \
 - **Single-person only.** No NMS, no Hungarian bipartite matching, no multi-person Pose Decoder.
 - **No Teacher-Student framework.** Targets are generated from COCO keypoints, not OpenPose video.
 - **MM-Fi specific.** 114 subcarriers, 64 time packets, OpenPose BODY_18 keypoint ordering.
-- **Memmap pipeline assumed.** Training expects pre-built `.npy` files from `build_memmap.py` on the server. The HDF5 dataloader in `data/dataloader.py` is legacy/fallback.
+- **Memmap pipeline assumed.** Training expects pre-built `.npy` files from `build_memmap.py` on the server.
 - **AdamW with weight_decay=1e-4.** The paper's Table II erroneously lists "weight decay = 0.7" (actually the LR gamma).
 - **No `scipy.signal.resample` in the model pipeline.** Upsampling is done once during memmap preprocessing.
 - **`model/__init__.py` and `data/__init__.py` provide re-exports.** Use `from model import MultiFormer` not `from model.multiformer import MultiFormer`.
