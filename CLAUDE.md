@@ -10,7 +10,7 @@ MultiFormerX is a PyTorch reproduction of the MultiFormer paper for WiFi-based s
 
 ```bash
 # Compile-check all source files (minimum validation after any edit)
-python -m py_compile model/tfddt.py model/attention.py model/heatmap_decoder.py model/papm.py model/msfn.py model/multiformer.py data/memmap_dataset.py data/pose_targets.py eval/metrics.py scripts/train.py
+python -m py_compile model/tfddt.py model/attention.py model/heatmap_decoder.py model/papm.py model/msfn.py model/multiformer.py data/memmap_dataset.py data/pose_targets.py eval/metrics.py train.py
 
 # Full shape smoke test (no dataset needed)
 python -c "
@@ -24,7 +24,7 @@ print('OK')
 "
 
 # Training (requires pre-built memmap .npy files on a Linux server)
-python scripts/train.py \
+python train.py \
     --data-dir /data/WiFiPose/dataset/mmfi_pose_v3 \
     --normalize global_minmax \
     --train-subjects S01 S02 S03 S04 S05 S06 S07 S08 S09 S10 \
