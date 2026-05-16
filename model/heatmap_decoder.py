@@ -5,7 +5,7 @@ from torch import nn
 
 
 class HeatmapDecoder(nn.Module):
-    """Decode features into PCM (19ch) and PAF (38ch) heatmaps."""
+    """Decode features into PCM (19ch) and PAF (32ch) heatmaps."""
 
     def __init__(
         self,
@@ -13,7 +13,7 @@ class HeatmapDecoder(nn.Module):
         mid_channels: int = 128,
         hidden_channels: int = 512,
         pcm_channels: int = 19,
-        paf_channels: int = 38,
+        paf_channels: int = 32,
     ) -> None:
         super().__init__()
         layers: list[nn.Module] = []

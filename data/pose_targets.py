@@ -6,56 +6,55 @@ import numpy as np
 
 
 OPENPOSE18_LIMBS: tuple[tuple[int, int], ...] = (
-    (1, 2),
-    (1, 5),
-    (2, 3),
-    (3, 4),
-    (5, 6),
-    (6, 7),
-    (1, 8),
-    (8, 9),
-    (9, 10),
-    (1, 11),
-    (11, 12),
-    (12, 13),
-    (1, 0),
-    (0, 14),
-    (14, 16),
-    (0, 15),
-    (15, 17),
-    (2, 16),
-    (5, 17),
+    # Right leg
+    (0, 1),   # pelvis → r_hip
+    (1, 2),   # r_hip → r_knee
+    (2, 3),   # r_knee → r_ankle
+    # Left leg
+    (0, 4),   # pelvis → l_hip
+    (4, 5),   # l_hip → l_knee
+    (5, 6),   # l_knee → l_ankle
+    # Spine
+    (0, 7),   # pelvis → spine
+    (7, 8),   # spine → thorax
+    (8, 9),   # thorax → neck
+    (9, 10),  # neck → head
+    # Right arm
+    (8, 14),  # thorax → r_shoulder
+    (14, 15), # r_shoulder → r_elbow
+    (15, 16), # r_elbow → r_wrist
+    # Left arm
+    (8, 11),  # thorax → l_shoulder
+    (11, 12), # l_shoulder → l_elbow
+    (12, 13), # l_elbow → l_wrist
 )
 
 
-def coco17_to_openpose18(keypoints: np.ndarray) -> np.ndarray:
-    """Map normalized COCO-17 keypoints to OpenPose BODY_18 order."""
+def h36m17_to_openpose18(keypoints: np.ndarray) -> np.ndarray:
+    """Map MM-Fi H36M-17 keypoints to OpenPose BODY_18 order."""
 
     keypoints = np.asarray(keypoints, dtype=np.float32)
     if keypoints.shape != (17, 2):
         raise ValueError(f"Expected keypoints with shape (17, 2), got {keypoints.shape}")
 
     openpose_keypoints = np.full((18, 2), np.nan, dtype=np.float32)
-    openpose_keypoints[0] = keypoints[0]
-    openpose_keypoints[2] = keypoints[6]
-    openpose_keypoints[3] = keypoints[8]
-    openpose_keypoints[4] = keypoints[10]
-    openpose_keypoints[5] = keypoints[5]
-    openpose_keypoints[6] = keypoints[7]
-    openpose_keypoints[7] = keypoints[9]
-    openpose_keypoints[8] = keypoints[12]
-    openpose_keypoints[9] = keypoints[14]
-    openpose_keypoints[10] = keypoints[16]
-    openpose_keypoints[11] = keypoints[11]
-    openpose_keypoints[12] = keypoints[13]
-    openpose_keypoints[13] = keypoints[15]
-    openpose_keypoints[14] = keypoints[2]
-    openpose_keypoints[15] = keypoints[1]
-    openpose_keypoints[16] = keypoints[4]
-    openpose_keypoints[17] = keypoints[3]
+    # H36M-17 → OpenPose BODY_18 (face indices 14-17 left as NaN)
+    openpose_keypoints[0] = keypoints[9]   # nose ← H36M neck/head_base
+    openpose_keypoints[2] = keypoints[14]  # r_shoulder
+    openpose_keypoints[3] = keypoints[15]  # r_elbow
+    openpose_keypoints[4] = keypoints[16]  # r_wrist
+    openpose_keypoints[5] = keypoints[11]  # l_shoulder
+    openpose_keypoints[6] = keypoints[12]  # l_elbow
+    openpose_keypoints[7] = keypoints[13]  # l_wrist
+    openpose_keypoints[8] = keypoints[1]   # r_hip
+    openpose_keypoints[9] = keypoints[2]   # r_knee
+    openpose_keypoints[10] = keypoints[3]  # r_ankle
+    openpose_keypoints[11] = keypoints[4]  # l_hip
+    openpose_keypoints[12] = keypoints[5]  # l_knee
+    openpose_keypoints[13] = keypoints[6]  # l_ankle
 
-    left_shoulder = keypoints[5]
-    right_shoulder = keypoints[6]
+    left_shoulder = keypoints[11]
+    right_shoulder = keypoints[14]
     if np.isfinite(left_shoulder).all() and np.isfinite(right_shoulder).all():
         openpose_keypoints[1] = (left_shoulder + right_shoulder) * 0.5
 
@@ -99,7 +98,7 @@ def generate_pose_targets(
         pose_range: (min, max) of keypoint coordinate range.
 
     Returns:
-        pcm (19, H, W), paf (38, H, W).
+        pcm (19, H, W), paf (32, H, W).
         PCM ch0-17: 18 anatomical keypoints, ch18: mean background.
     """
     keypoints = np.asarray(keypoints, dtype=np.float32)

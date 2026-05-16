@@ -17,7 +17,7 @@ class MSFN(nn.Module):
         decoder_hidden: int = 512,
         stages: int = 3,
         pcm_channels: int = 19,
-        paf_channels: int = 38,
+        paf_channels: int = 32,
     ) -> None:
         super().__init__()
         if stages < 1:
